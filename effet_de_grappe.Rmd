@@ -1,0 +1,593 @@
+---
+title: "#CN_effet_de_grappe\nObjectiver l'effet de grappe concernant les communes nouvelles"
+author: "G. Bideau"
+date: '`r format(Sys.time(), "%d %B %Y %X")`' # %X pour rajouter l'heure
+bibliography: biblio/biblio.bib
+link_citations: true
+output:
+     html_document:
+       toc: true
+       theme: united
+       css : css/styles.css
+editor_options: 
+  chunk_output_type: console
+---
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, # Afficher ou non le code R dans le document
+                      eval	= TRUE, #	Exécuter ou non le code R à la compilation
+                      include	= TRUE, #	Inclure ou non le code R et ses résultats dans le document
+                      # results	“hide”/“asis”/“markup”/“hold”	Type de résultats renvoyés par le bloc de code
+                      warning = FALSE, # Afficher ou non les avertissements générés par le bloc
+                      message = FALSE,  # Afficher ou non les messages générés par le bloc
+                      cache=TRUE) # Utiliser le cache pour accélerer les knits
+
+# Librairies utilisées
+library(sf)
+library(cartography)
+library(mapsf)
+library(corrplot)
+library(cowplot)
+library(MTA)
+library(readxl)
+library(ggplot2)
+library(FactoMineR) 
+library(factoextra)
+library(cluster)
+library(stringr)
+library(reshape)
+library(flows)
+library(sp)
+library(knitr)
+library(condformat)
+# library(dplyr)
+library(questionr)
+library(spdep) # Pour les matrices de contiguïté
+library(rgeoda) # Pour les matrices de contiguïté
+
+```
+
+
+# Présentation du document
+
+NB : Ce script est un document de travail.
+
+Il cherche à objectiver, par l'utilisation de méthodes d'analyse spatiale, l'« effet de grappe » repéré par la littérature [@bideau2019]
+
+Il est mis à disposition dans une logique de science ouverte.
+
+Ce travail s'inscrit dans le cadre d'une étude plus générale sur les communes nouvelles (et plus particulièrement d'un addendum au chapitre IV de la thèse) :
+
+https://cv.hal.science/gabriel-bideau
+
+Licence CC-BY-NC-SA.
+
+Il est possible d'accéder au code de ce Markdown ici : https://gbideau.github.io/CN_effet_de_grappe/effet_de_grappe.Rmd
+
+Les données utilisées pour jouer le code sont regroupées ici :
+https://gbideau.github.io/CN_data/
+
+Ne pas hésiter à contacter l'auteur (gabriel.bideau@gmail.com) pour toute question.
+
+
+
+
+#  Packages nécessaires
+
+
+```{r Librairies}
+# Librairies utilisées
+library(sf)
+library(cartography)
+library(mapsf)
+library(corrplot)
+library(cowplot)
+library(MTA)
+library(readxl)
+library(ggplot2)
+library(FactoMineR) 
+library(factoextra)
+library(cluster)
+library(reshape)
+library(reshape2)
+library(flows)
+# NB : Pour le package flows, la version la plus récente est disponible ici :
+# remotes::install_github("rCarto/flows") # ou # install.packages("mapsf")
+# Pour obtenir une version plus ancienne (celle utilisée ici) : https://cran.r-project.org/src/contrib/Archive/flows/
+# install.packages("packages/flows_1.1.1.tar.gz", repos=NULL, type="source")
+library(sp)
+library(knitr)
+library(condformat) # https://cran.r-project.org/web/packages/condformat/vignettes/introduction.html
+library(units)
+library(stringr)
+# library(dplyr)
+library(questionr)
+library(spdep) # Pour les matrices de contiguïté
+library(rgeoda) # Pour les matrices de contiguïté
+
+# Liste pour installer les packages si besoin :
+# sf cartography mapsf readxl foreign dplyr flextable knitr stringr units condformat forcats ggplot2 rstatix questionr corrplot gtsummary broom GGally effects forestmodel ggeffects labelled cowplot spdep rgeoda
+
+```
+
+
+
+# Matrice de contiguïté et autocorrélation spatiale
+
+## Import des données
+```{r Prep data section 9}
+load("data/refdata.Rdata")
+
+geom2011 <- st_read("data/geom.gpkg", layer = "geom2011", quiet = TRUE) 
+geom_new <- st_read("data/geom.gpkg", layer = "geom_new", quiet = TRUE) 
+
+```
+
+Il s'agit ici de creuser l'« effet de grappe », ce qu'on appelle parfois l'« effet consultant ».
+
+## Matrice de voisinage (package spdep)
+
+À l'aide de @bellefon2018.
+
+```{r voisinages}
+library(spdep)
+
+test_geom <- merge(geom2011, df2011[, c("CODGEO", "CODE_DEPT", "COM_NOUV", "P09_POP", "LIBGEO")], by = "CODGEO")
+test_geom <- subset (test_geom, CODE_DEPT == "49" )
+
+test_queen <- poly2nb(test_geom, queen = TRUE)
+test_rook <- poly2nb(test_geom, queen = FALSE)
+
+# On change de type d'objet pour faciliter les représentations
+test_geom <- as(test_geom, "Spatial")
+
+# Représentation graphique des deux manières de calculer les voisinages.
+plot(test_geom, border="lightgray")
+plot(test_queen, coordinates(test_geom),add=TRUE,col="red")
+plot(test_rook, coordinates(test_geom),add=TRUE,col="blue")
+
+# Réalisation d'une liste de poids
+test_liste <- nb2listw(test_queen, zero.policy = TRUE)
+# NB : zero.policy :default NULL, use global option value; if FALSE stop with error for any empty neighbour sets, if TRUE permit the weights list to be formed with zero-length weights vectors https://r-spatial.github.io/spdep/reference/nb2listw.html
+
+# Pour avoir une représentation graphique des communes nouvelles
+test_geom2 <- merge(geom2011, df2011[, c("CODGEO", "CODE_DEPT", "COM_NOUV", "P09_POP", "LIBGEO")], by = "CODGEO")
+test_geom2 <- subset (test_geom2, CODE_DEPT == "49" )
+
+plot(subset(test_geom2[, c("CODE_DEPT", "COM_NOUV")], CODE_DEPT == "49"))
+
+# Pour extraire les entités sans liens :
+test_liste$neighbours
+isol <- test_geom2[c(5896, 7662, 10958, 10959, 10960, 11024, 21454, 21470, 21471, 21472, 21473, 33974),]
+
+
+rm(isol, test_queen, test_rook)
+```
+
+À l'échelle du département du Maine-et-Loire, des différences notables en fonction du voisinage choisi.
+
+Officiellement, le contact par un point autorise à fusionner en commune nouvelle donc choix du voisinage "queen".
+
+Cf. la réponse du ministère de l'intérieur à une question écrite au Sénat sur la question de la continuité territoriale en 2009 : https://www.senat.fr/questions/base/2009/qSEQ090609011.html.
+
+## Calcul de l'indice de Moran (package spdep)
+
+Cf. @bellefon2018a p. 56 sq. pour l'explication et 62 pour le code.
+
+```{r indice_moran}
+test_geom$COM_NOUV2 <- dplyr::if_else(test_geom$COM_NOUV == "OUI", 1, 0)
+
+moran.plot(test_geom$COM_NOUV2, test_liste, labels=FALSE , xlab="variable",ylab="moyenne des voisins")
+moran.plot(test_geom$P09_POP, test_liste, labels=FALSE , xlab="variable",ylab="moyenne des voisins")
+
+
+```
+
+## Statistiques *join count* (package spdep)
+
+Cf. @bellefon2018a p. 62 sq. pour l'explication et 64 pour le code.
+
+L'analyse des statistiques des *join count* observe, pour une variable binaire, s'il y a une autocorrélation spatiale de la présence d'individus partageant ou non une caractéristique.
+"on considère une variable binaire qui représente deux couleurs, Blanc (B) et Noir (N) de sorte qu’une liaison puisse être qualifiée de Blanc-Blanc,
+Noir-Noir ou Blanc-Noir. On observe :
+
+— <u>une autocorrélation spatiale positive</u> si le nombre de liaisons Blanc-Noir est significativement **inférieur** à ce que l’on aurait obtenu à partir d’une répartition spatiale aléatoire ;
+
+— <u>une autocorrélation spatiale négative</u> si le nombre de liaisons Blanc-Noir est significativement **supérieur** à ce que l’on aurait obtenu à partir d’une répartition spatiale aléatoire ;
+
+— <u>aucune autocorrélation spatiale</u> si le nombre de liaisons Blanc-Noir est approximativement **identique** à ce que l’on aurait obtenu à partir d’une répartition spatiale aléatoire." (p. 62-63, souligné dans le texte)
+
+
+```{r indice_join_count}
+test_geom$COM_NOUV3 <- as.factor(test_geom$COM_NOUV)
+class(test_geom$COM_NOUV3)
+
+joincount.test(test_geom$COM_NOUV3, test_liste, zero.policy=TRUE, alternative="greater",
+ sampling="nonfree", spChk=NULL, adjust.n=TRUE)
+
+```
+
+Pour les communes nouvelles, on observe une autocorrélation positive très nette et significative. L'autocorrélation est d'ailleurs également significtive pour les communes non fusionnantes, même si la déviation est moins nette.
+
+
+## LISA : Indice de Moran (package spdep)
+
+Mesures locales d’association spatiale : LISA (*Local Indicators of Spatial Association*).
+
+Cf. @bellefon2018a p. 65 sq. pour l'explication et 69 pour le code.
+
+"Anselin (ANSELIN 1995) développe les notions introduites par Getis et Ord en définissant des indicateurs d’autocorrélation spatiale locale. Ceux-ci doivent permettre de mesurer l’intensité et la significativité de la dépendance locale entre la valeur d’une variable dans une unité spatiale et les valeurs de cette même variable dans les unités spatiales environnantes." (p. 65)
+
+Fonction 'localmoran' du package 'spdep'. Ii : local moran statistic ;  E.Ii : expectation of local moran statistic ; Var.Ii : variance of local moran statistic ; Z.Ii : standard deviate of local moran statistic ; Pr() : p-value of local moran statistic (https://www.rdocumentation.org/packages/spdep/versions/1.1-8/topics/localmoran).
+
+
+Pour analyser correctement la représentativité des résultats, plusieurs méthodes proposent d'ajuster la p-value :
+
+"On considère que cette méthode [celle de Bonferroni] ne donne de bons résultats que lorsque le nombre de tests réalisés est petit. […] La méthode d’ajustement de Holm conduit à un plus grand nombre de clusters significatifs que la méthode de Bonferroni. Elle lui est donc le plus souvent préférée. Cependant, cette méthode se concentre aussi sur la détection **de l’existence d’au moins un cluster dans toute la zone**. […] La méthode du False Discovery Rate (FDR) a été introduite par BENJAMINI et al. 1995. Avec cette méthode, le risque de juger - à tort - un cluster comme significatif est plus élevé, mais inversement le risque de juger - à tort - un cluster comme non significatif est plus faible." (p. 68) "La méthode de Holm diminue en effet le risque de conclure à tort à l’existence d’une autocorrélation spatiale locale. En revanche, cette méthode augmente le risque de passer à côté d’un cluster local." (p.69)
+
+
+```{r LISA}
+
+results_LISA<- as.data.frame(localmoran(test_geom$COM_NOUV2,test_liste,zero.policy=TRUE))
+
+#Calcul des p-values ajustées
+results_LISA$pvalue_ajuste_bonferroni<- p.adjust(results_LISA$`Pr(z != E(Ii))`,method="bonferroni")
+results_LISA$pvalue_ajuste_holm<- p.adjust(results_LISA$`Pr(z != E(Ii))`,method="holm")
+results_LISA$pvalue_ajuste_fdr<- p.adjust(results_LISA$`Pr(z != E(Ii))`,method="fdr")
+
+test_geom3 <- cbind(test_geom2, results_LISA)
+
+
+# Quelles communes ont une p-value élevée selon les trois méthodes ?
+par(mar = c(0,0,0,0), mfrow = c(2,2))
+
+# plot(st_geometry(dep), col = NA)
+choroLayer(x = test_geom3 , var = "pvalue_ajuste_holm",
+           method = "quantile", nclass = 6,
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = carto.pal(pal1 = "blue.pal", n1 = 6),
+           border = NA,
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Pvalue ajustée : méthode de Holm")
+
+
+choroLayer(x = test_geom3 , var = "pvalue_ajuste_bonferroni",
+           method = "quantile", nclass = 6,
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = carto.pal(pal1 = "blue.pal", n1 = 6),
+           border = NA,
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Pvalue ajustée : méthode de Bonferroni")
+
+choroLayer(x = test_geom3 , var = "pvalue_ajuste_fdr",
+           method = "quantile", nclass = 6,
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = carto.pal(pal1 = "blue.pal", n1 = 6),
+           border = NA,
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Pvalue ajustée : méthode FDR")
+
+
+typoLayer(x = test_geom3, var = "COM_NOUV",  
+          col=c("red", "blue"), border = NA)
+
+layoutLayer(title = "Titre", theme = "red.pal",
+            author = "G. Bideau, 2022.",
+            sources = "")
+
+# On choisit la méthode FDR et on ne conserve que les valeurs qui nous paraissent significatives au vu de la p-value ainsi ajustée
+
+test_geom3$Ii_retenu <- ifelse(test_geom3$pvalue_ajuste_fdr <= 0.1, yes = test_geom3$Ii, no = NA)
+
+par(mar = c(0,0,0,0), mfrow = c(1,2))
+
+# On cartographie le résultat de l'indice de Moran
+
+choroLayer(x = test_geom3 , var = "Ii_retenu",
+           method = "quantile", nclass = 6,
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = carto.pal(pal1 = "blue.pal", n1 = 6),
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Indice de Moran locaux significatifs",
+           legend.nodata = "p-value non significatif (>0,1 méthode FDR)")
+typoLayer(x = test_geom3, var = "COM_NOUV",  
+          col=c("red", "blue"), border = NA, legend.pos = "topleft")
+
+par(mar = c(0,0,0,0), mfrow = c(1,1))
+
+
+```
+
+
+## Matrice de voisinage (package rgeoda)
+
+Présentation du package 'rgeoda' : https://geodacenter.github.io/rgeoda/articles/rgeoda_tutorial.html 
+
+Sur les matrices de contiguïté : https://geodacenter.github.io/workbook/4a_contig_weights/lab4a.html
+
+Sur l'auto-corrélation : http://geodacenter.github.io/workbook/6a_local_auto/lab6a.html
+
+
+```{r rgeoda spatial_weigths, cache=TRUE}
+
+library(rgeoda)
+
+
+test_geom <- merge(geom2011, df2011[, c("CODGEO", "CODE_DEPT", "COM_NOUV", "P09_POP")], by = "CODGEO")
+# test_geom <- subset (test_geom, CODE_DEPT == "49" )
+test_geomCN <- merge(geom_new, df_new, by = "CODGEO_new")
+test_geomCN <- subset(test_geomCN, COM_NOUV == "OUI")
+
+queen_w <- queen_weights(test_geom, order=1, include_lower_order = FALSE, precision_threshold = 0)
+summary(queen_w)
+# Pour savoir si certaines entités sont séparées des autres
+has_isolates(queen_w)
+```
+
+## LISA (package rgeoda)
+
+NB : Sous-section qui peut poser problème lors d'un knit si n'est pas executée en même temps que les précédentes (cela ne fonctionne pas bien si les sous-sections précédentes sont en cache).
+
+```{r LISA_rgeodata, eval = TRUE, cache=TRUE}
+
+test_geom$COM_NOUV2 <- dplyr::if_else(test_geom$COM_NOUV == "OUI", 1, 0)
+variable <- "COM_NOUV2"
+df_variable <- test_geom[variable]
+lisa <- local_moran(queen_w, df_variable)
+
+# To get the values of the local Moran:
+lms <- lisa_values(gda_lisa = lisa)
+
+# To get the pseudo-p values of significance of local Moran computation:
+pvals <- lisa_pvalues(lisa)
+
+# To get the cluster indicators of local Moran computation:
+cats <- lisa_clusters(lisa, cutoff = 0.05)
+
+# Labels
+lbls <- lisa_labels(lisa)
+
+
+test_geom$LISA <- lms
+test_geom$pvals <- pvals
+test_geom$cats <- cats
+
+# On rend les catégories plus lisibles en remplaçant le numéro par l'intitulé
+test_geom$cats <- as.factor(test_geom$cats)
+num_levels <- as.numeric(levels(test_geom$cats))
+levels(test_geom$cats) <- lbls[num_levels + 1]
+print(levels(test_geom$cats))
+
+test_geom$LISA_retenu <- ifelse(test_geom$pvals <= 0.1, yes = test_geom$LISA, no = NA)
+
+par(mar = c(0,0,0,0), mfrow = c(1,2))
+
+couleurs <- c("#f7f7f7", "#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#ffff33")
+# Cf. https://colorbrewer2.org/#type=qualitative&scheme=Set1&n=6 pour composer les palettes
+typoLayer(x = test_geom , var = "cats",
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = couleurs[1:length(levels(test_geom$cats))],
+           border = NA,
+           legend.pos = "topleft",
+           legend.values.order = levels(test_geom$cats),
+           legend.title.txt = "Indice de Moran locaux significatifs\nsur la variable de « commune nouvelle »\n(pvalue < 0,05)")
+
+
+typoLayer(x = test_geom, var = "COM_NOUV",
+          legend.values.order = c("OUI", "NON"),
+          col=c("red","blue"),
+          border = NA,
+          legend.pos = "topleft",
+          legend.title.txt = "Communes fusionnantes")
+
+# plot(test_geomCN$geometry, col = NA, border = "black", lwd = 1, add = TRUE)
+
+par(mar = c(0,0,0,0), mfrow = c(1,1))
+
+table(test_geom$cats, test_geom$COM_NOUV)
+
+rm(variable, df_variable, lms, pvals, cats, lbls, num_levels, couleurs)
+
+```
+
+
+
+```{r Nettoyage espace de travail, echo=FALSE}
+rm(list=ls())
+```
+
+
+
+# Cartographies
+
+Sans lien direct avec l'effet de grappe, éléments de cartographie, qui sont développés dans le chapitre X de la thèse (utilisation du même Markdown pour limiter la création de multiples dépôts).
+
+Cf. l'idée donnée ici : https://www.bnsp.insee.fr/ark:/12148/bc6p08tp83z/f1.pdf#page=2
+
+
+## Préparation des données
+
+
+```{r import_layers}
+
+geom2011 <- st_read("data/geom.gpkg", layer = "geom2011", quiet = TRUE) 
+geom_new <- st_read("data/geom.gpkg", layer = "geom_new", quiet = TRUE) 
+geomfus2011 <- st_read("data/geom.gpkg", layer = "geomfus2011", quiet = TRUE) 
+geomCN_new <- st_read("data/geom.gpkg", layer = "geomCN_new", quiet = TRUE)  
+dep <- st_read("data/geom.gpkg", layer = "dep", quiet = TRUE)
+
+# Métadonnées
+# Liste toutes les variables disponiles
+variables_dispo <- as.data.frame(read_excel("data-raw/meta.xlsx", sheet = "ind_target"))
+# Liste les variables marquées dans le fichier meta_budgets.xlsx comme nous intéressant
+target <- subset(variables_dispo, variable_selec == "X")
+
+
+```
+
+Les données socio-économiques qui décrivent les communes en géographies 2011 et 2021 sont ici importées. 
+On commence par extraire les communes ayant participé à la création d'une commune nouvelle, appelées ici communes fusionnantes (`datafus2011`), les  communes nouvelles, avec les géométries au 1er janvier 2021 et caractérisées par les données à la géométrie 2011 agrégées (`dataCN_new`), ainsi que les communes, à la géométrie 2011, qui n'ont pas participé à la création d'une commune nouvelle (`dataNfus2011`)
+
+```{r import_data}
+
+load("data/refdata.Rdata")
+datafus2011 <- subset(df2011, COM_NOUV == "OUI")
+dataCN_new <- subset(df_new, COM_NOUV == "OUI")
+dataNfus2011 <- subset(df2011, COM_NOUV == "NON") 
+
+```
+
+
+Dans un certain nombre de cas, il sera utile d'avoir, dans un même objet, les données et les géométries. Les données sont ici jointes aux couches géographiques d'intérêt. 
+
+```{r join_data}
+
+geom2011 <- merge(geom2011, df2011, by = "CODGEO")
+geom_new <- merge(geom_new, df_new, by = "CODGEO_new")
+geomCN_new <- merge(geomCN_new, dataCN_new, by = "CODGEO_new")
+geomfus2011 <- merge(geomfus2011, datafus2011, by = "CODGEO")
+
+```
+
+
+## En fonction de la taille démographique
+
+
+
+```{r cartographie_taille_pop_communes, out.width = '100%'}
+
+# par(mfrow = c(1,1), mar=c(0,0,1.5,0))
+
+# En fonction de la population de la commune fusionnante
+
+choroLayer(x = geomfus2011 , var = "P09_POP",
+           method = "quantile", nclass = 4,
+           col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 2, n2 = 2),
+           border = NA,
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Nombre d'habitants (2009,\nregroupement par quartiles)")
+plot(st_geometry(dep), add = TRUE, lwd = 0.3)
+
+
+layoutLayer(title = " ",# "Communes fusionnantes (2011-2024)\nen fonction de leur nombre d'habitants",
+            author = "G. Bideau, 2024",
+            tabtitle = TRUE, frame = FALSE, col = "white", coltitle = "black",
+            sources = "Sources : INSEE, IGN, 2024")
+
+# On crée un tableau donnant, pour chaque département, la population moyenne des communes fusionnantes
+tableau_dep <- as.data.frame(tapply(geomfus2011$P09_POP, INDEX = geomfus2011$CODE_DEPT, mean))
+colnames(tableau_dep) <- c("moyenne_Cfus")
+tableau_dep$median_Cfus <- tapply(geomfus2011$P09_POP, INDEX = geomfus2011$CODE_DEPT, median)
+tableau_dep$CODE_DEPT <- row.names(tableau_dep)
+tableau_dep$Nbr_Cfus <- table(geomfus2011$CODE_DEP)
+tableau_dep <- merge(tableau_dep, dep[, c("CODE_DEPT", "LIBELLE")], by = "CODE_DEPT", all.x = TRUE, all.y = FALSE)
+
+tableau_dep_tt <- as.data.frame(tapply(geom2011$P09_POP, INDEX = geom2011$CODE_DEPT, mean))
+colnames(tableau_dep_tt) <- c("moyenne")
+tableau_dep_tt$median <- tapply(geom2011$P09_POP, INDEX = geom2011$CODE_DEPT, median)
+tableau_dep_tt$CODE_DEPT <- row.names(tableau_dep_tt)
+tableau_dep <- merge(tableau_dep, tableau_dep_tt, by = "CODE_DEPT", all.x = TRUE, all.y = FALSE)
+
+tableau_pr_publi <- subset(tableau_dep, tableau_dep$Nbr_Cfus > 40)
+tableau_pr_publi <- tableau_pr_publi[order(-tableau_pr_publi$moyenne_Cfus),]
+
+kable(tableau_pr_publi[, c("LIBELLE", "Nbr_Cfus", "moyenne_Cfus", "moyenne", "median_Cfus", "median")],
+      col.names = c("Département", "Nombre de communes fusionnantes", "Population moyenne des communes fusionnantes", "Population communale moyenne", "Population médiane des communes fusionnantes", "Population communale médiane"), digits = 0)
+
+# En fonction de la population de la commune nouvelle
+choroLayer(x = geomCN_new , var = "P09_POP",
+           method = "quantile", nclass = 4,
+           col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 2, n2 = 2),
+           border = NA,
+           legend.pos = "topleft", legend.values.rnd = 2,
+           legend.title.txt = "Nombre d'habitants (2009,\nregroupement par quartiles)")
+plot(st_geometry(dep), add = TRUE, lwd = 0.3)
+plot(st_geometry(geomCN_new), add = TRUE, lwd = 0.2)
+
+layoutLayer(title = "",# "Communes nouvelles (2011-2024)\nen fonction de leur nombre d'habitants",
+            author = "G. Bideau, 2024",
+            tabtitle = TRUE, frame = FALSE, col = "white", coltitle = "black",
+            sources = "Sources : INSEE, IGN, 2024")
+
+# On crée un tableau donnant, pour chaque département, la population moyenne des communes nouvelles
+tableau_dep <- as.data.frame(tapply(geomCN_new$P09_POP, INDEX = geomCN_new$CODE_DEPT_new, mean))
+colnames(tableau_dep) <- c("moyenne_CN")
+tableau_dep$median_CN <- tapply(geomCN_new$P09_POP, INDEX = geomCN_new$CODE_DEPT_new, median)
+tableau_dep$CODE_DEPT <- row.names(tableau_dep)
+tableau_dep$Nbr_Cfus <- table(geomfus2011$CODE_DEP) # On garde le nombre de communes fusionnantes pour faciliter les comparaisons entre les deux tableaux
+tableau_dep <- merge(tableau_dep, dep[, c("CODE_DEPT", "LIBELLE")], by = "CODE_DEPT", all.x = TRUE, all.y = FALSE)
+
+tableau_dep_tt <- as.data.frame(tapply(geom_new$P09_POP, INDEX = geom_new$CODE_DEPT_new, mean))
+colnames(tableau_dep_tt) <- c("moyenne")
+tableau_dep_tt$median <- tapply(geom_new$P09_POP, INDEX = geom_new$CODE_DEPT_new, median)
+tableau_dep_tt$CODE_DEPT <- row.names(tableau_dep_tt)
+tableau_dep <- merge(tableau_dep, tableau_dep_tt, by = "CODE_DEPT", all.x = TRUE, all.y = FALSE)
+
+tableau_pr_publi <- subset(tableau_dep, tableau_dep$Nbr_Cfus > 40)
+tableau_pr_publi <- tableau_pr_publi[order(-tableau_pr_publi$moyenne_CN),]
+
+kable(tableau_pr_publi[, c("LIBELLE", "Nbr_Cfus", "moyenne_CN", "moyenne", "median_CN", "median")],
+      col.names = c("Département", "Nombre de communes nouvelles", "Population moyenne des communes nouvelles", "Population communale moyenne", "Population médiane des communes nouvelles", "Population communale médiane"), digits = 0)
+
+```
+
+
+
+
+## En fonction de la taille démographique, rapportée aux autres communes
+
+On regarde la position des communes fusionnantes puis des communes nouvelles vis-à-vis des communes françaises
+
+```{r cartographie_taille_pop_communes_par_rapport_pop_fr, out.width = '100%'}
+
+par(mfrow = c(1,2), mar=c(0,0,1.2,0))
+
+# Création des données concernant les quantiles, mais en s'appuyant sur les données de l'ensemble des communes françaises
+geomfus2011$P09_POP_quantiles <- as.factor(cut(geomfus2011$P09_POP,
+                                     breaks=c(quantile(geom2011$P09_POP, probs=seq(0, 1, 1/6), na.rm = TRUE))))
+geomCN_new$P09_POP_quantiles <- as.factor(cut(geomCN_new$P09_POP,
+                                     breaks=c(quantile(geom_new$P09_POP, probs=seq(0, 1, 1/6), na.rm = TRUE))))
+
+# En fonction de la population de la commune fusionnante
+
+typoLayer(x = geomfus2011 , var = "P09_POP_quantiles",
+          border = NA,
+          legend.values.order = levels(geomfus2011$P09_POP_quantiles),
+          col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+          # col = carto.pal(pal1 = "red.pal", n1 = 5),
+          legend.pos = "topleft",
+          legend.title.txt = "Situation au sein\ndes quantiles des\ncommunes françaises")
+plot(st_geometry(dep), add = TRUE, lwd = 0.3)
+
+
+layoutLayer(title = "Communes fusionnantes (2011-2024)\nen fonction de leur nombre d'habitant",
+            author = "G. Bideau, 2024",
+            tabtitle = TRUE, frame = FALSE, col = "white", coltitle = "black",
+            sources = "Sources : INSEE, IGN, 2024")
+
+
+# En fonction de la population de la commune nouvelle
+typoLayer(x = geomCN_new , var = "P09_POP_quantiles",
+          col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+          border = NA,
+          legend.values.order = levels(geomCN_new$P09_POP_quantiles),
+          legend.pos = "topleft",
+          legend.title.txt = "Situation au sein\ndes quantiles des\ncommunes françaises")
+plot(st_geometry(dep), add = TRUE, lwd = 0.3)
+plot(st_geometry(geomCN_new), add = TRUE, lwd = 0.2)
+
+layoutLayer(title = "Communes nouvelles (2011-2024)\nen fonction de leur nombre d'habitant",
+            author = "G. Bideau, 2024",
+            tabtitle = TRUE, frame = FALSE, col = "white", coltitle = "black",
+            sources = "Sources : INSEE, IGN, 2024")
+
+
+```
+
+On voit bien que les communes nouvelles sont bien davantage dans la strate supérieure. Mais il ne faut pas croire non plus que seules de petites communes fusionnent, ce n'est pas le cas.
+
+
+
+
+# Bibliographie
+<!-- \nocite{} -->
+
