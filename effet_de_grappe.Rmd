@@ -114,7 +114,7 @@ library(rgeoda) # Pour les matrices de contiguïté
 # Matrice de contiguïté et autocorrélation spatiale
 
 ## Import des données
-```{r Prep data section 9}
+```{r Prep data}
 load("data/refdata.Rdata")
 
 geom2011 <- st_read("data/geom.gpkg", layer = "geom2011", quiet = TRUE) 
@@ -307,7 +307,7 @@ Sur les matrices de contiguïté : https://geodacenter.github.io/workbook/4a_con
 Sur l'auto-corrélation : http://geodacenter.github.io/workbook/6a_local_auto/lab6a.html
 
 
-```{r rgeoda spatial_weigths, cache=TRUE}
+```{r rgeoda spatial_weigths, cache=FALSE}
 
 library(rgeoda)
 
@@ -384,6 +384,105 @@ typoLayer(x = test_geom, var = "COM_NOUV",
 par(mar = c(0,0,0,0), mfrow = c(1,1))
 
 table(test_geom$cats, test_geom$COM_NOUV)
+
+rm(variable, df_variable, lms, pvals, cats, lbls, num_levels, couleurs)
+
+```
+
+
+## LISA (package rgeoda) autres variables
+
+NB : Sous-section qui peut poser problème lors d'un knit si n'est pas executée en même temps que les précédentes (cela ne fonctionne pas bien si les sous-sections précédentes sont en cache).
+
+L'objectif de cette sous-section est d'observer si on observe une différence entre communes fusionnantes et autres communes, du point de vue de l'auto-corrélation spatiale de certains indicateurs.
+
+Globalement, on observe bien des positionnements parfois un peu différents des communes fusionnantes, mais cela est sans doute davantage lié à des effets de contexte (les communes fusionnantes sont sur-représentés dans certains types d'endroits, sous-représentés dans d'autres) que réellement lié à ces clusters.
+
+```{r LISA_rgeodata_autres_variables, eval = TRUE, cache=TRUE}
+
+test_geom$COM_NOUV2 <- dplyr::if_else(test_geom$COM_NOUV == "OUI", 1, 0)
+variable <- "COM_NOUV2"
+colnames(df2011)
+variable <- "P11_POT_FIN"
+variable <- "P09_POP1529Y_RT"
+variables_a_tester <- c("P09_CHOM1564", "C09_EMPLT_AGRI","P09_POP0014", "P09_POP1529", "P09_POP6074", "C09_ACTOCC_OUT", "superficie", "P11_POT_FIN")
+
+for (variable in variables_a_tester) {
+
+test_geom2 <- merge(test_geom, df2011[, c("CODGEO", variable)], by = "CODGEO")
+colnames(test_geom2)
+df_variable <- test_geom2[variable]
+lisa <- local_moran(queen_w, df_variable)
+
+# To get the values of the local Moran:
+lms <- lisa_values(gda_lisa = lisa)
+
+# To get the pseudo-p values of significance of local Moran computation:
+pvals <- lisa_pvalues(lisa)
+
+# To get the cluster indicators of local Moran computation:
+cats <- lisa_clusters(lisa, cutoff = 0.05)
+
+# Labels
+lbls <- lisa_labels(lisa)
+
+
+test_geom2$LISA <- lms
+test_geom2$pvals <- pvals
+test_geom2$cats <- cats
+
+# On rend les catégories plus lisibles en remplaçant le numéro par l'intitulé
+test_geom2$cats <- as.factor(test_geom2$cats)
+num_levels <- as.numeric(levels(test_geom2$cats))
+levels(test_geom2$cats) <- lbls[num_levels + 1]
+print(levels(test_geom2$cats))
+
+test_geom2$LISA_retenu <- ifelse(test_geom2$pvals <= 0.1, yes = test_geom2$LISA, no = NA)
+
+par(mar = c(0,0,0,0), mfrow = c(1,2))
+
+couleurs <- c("#f7f7f7", "#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#ffff33")
+# Cf. https://colorbrewer2.org/#type=qualitative&scheme=Set1&n=6 pour composer les palettes
+typoLayer(x = test_geom2 , var = "cats",
+           # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
+           col = couleurs[1:length(levels(test_geom2$cats))],
+           border = NA,
+           legend.pos = "topleft",
+           legend.values.order = levels(test_geom2$cats),
+           legend.title.txt = paste0("Indice de Moran locaux significatifs\nsur la variable « ", variable, " »\n(pvalue < 0,05)"))
+
+
+typoLayer(x = test_geom2, var = "COM_NOUV",
+          legend.values.order = c("OUI", "NON"),
+          col=c("red","blue"),
+          border = NA,
+          legend.pos = "topleft",
+          legend.title.txt = "Communes fusionnantes")
+
+# plot(test_geom2CN$geometry, col = NA, border = "black", lwd = 1, add = TRUE)
+
+par(mar = c(0,0,0,0), mfrow = c(1,1))
+
+
+
+# On regarde la différence entre les communes fusionnantes et les autres
+tabcont <- table(test_geom2$cats, test_geom2$COM_NOUV)
+
+print(tabcont) # En valeur absolue
+print(round(100*prop.table(tabcont,margin=1),1)) # Pourcentages, le total se fait par lignes
+# round(100*prop.table(tabcont,margin=),1) # Pourcentages, le total se fait sur l'ensemble de la population
+print(round(100*prop.table(tabcont,margin=2),1)) # Pourcentages, le total se fait par colonnes
+
+test<-chisq.test(tabcont)
+# test$observed
+# round(test$expected,1)
+# round(test$residuals,2)
+print(test)
+
+
+
+  
+}
 
 rm(variable, df_variable, lms, pvals, cats, lbls, num_levels, couleurs)
 
