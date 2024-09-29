@@ -287,7 +287,7 @@ choroLayer(x = test_geom3 , var = "Ii_retenu",
            # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
            col = carto.pal(pal1 = "blue.pal", n1 = 6),
            legend.pos = "topleft", legend.values.rnd = 2,
-           legend.title.txt = "Indice de Moran locaux significatifs",
+           legend.title.txt = "Indices de Moran significatifs",
            legend.nodata = "p-value non significatif (>0,1 méthode FDR)")
 typoLayer(x = test_geom3, var = "COM_NOUV",  
           col=c("red", "blue"), border = NA, legend.pos = "topleft")
@@ -369,7 +369,7 @@ typoLayer(x = test_geom , var = "cats",
            border = NA,
            legend.pos = "topleft",
            legend.values.order = levels(test_geom$cats),
-           legend.title.txt = "Indice de Moran locaux significatifs\nsur la variable de « commune nouvelle »\n(pvalue < 0,05)")
+           legend.title.txt = "Indices de Moran significatifs\nsur la variable de « commune nouvelle »\n(pvalue < 0,05)")
 
 
 typoLayer(x = test_geom, var = "COM_NOUV",
@@ -449,7 +449,7 @@ typoLayer(x = test_geom2 , var = "cats",
            border = NA,
            legend.pos = "topleft",
            legend.values.order = levels(test_geom2$cats),
-           legend.title.txt = paste0("Indice de Moran locaux significatifs\nsur la variable « ", variable, " »\n(pvalue < 0,05)"))
+           legend.title.txt = paste0("Indices de Moran significatifs\nsur la variable « ", variable, " »\n(pvalue < 0,05)"))
 
 
 typoLayer(x = test_geom2, var = "COM_NOUV",
