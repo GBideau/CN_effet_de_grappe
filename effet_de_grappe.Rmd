@@ -141,9 +141,25 @@ test_rook <- poly2nb(test_geom, queen = FALSE)
 test_geom <- as(test_geom, "Spatial")
 
 # Représentation graphique des deux manières de calculer les voisinages.
-plot(test_geom, border="lightgray")
+# plot(test_geom, border="lightgray")
+# plot(test_geom, border="grey50")
+# 
+# plot(test_queen, coordinates(test_geom),add=TRUE,col="red")
+# plot(test_rook, coordinates(test_geom),add=TRUE,col="blue")
+
+# Représentation graphique des deux manières de calculer les voisinages dans le cas du département du Maine-et-Loire
+plot(test_geom, border="grey50", main = "Le voisinage des communes\ndans le département du Maine-et-Loire (49)",
+     cex.main=1, # taille titre
+     font.main=1, # type (1 : normal, 2 : gras)
+     )
 plot(test_queen, coordinates(test_geom),add=TRUE,col="red")
 plot(test_rook, coordinates(test_geom),add=TRUE,col="blue")
+legend(title = "Type de voisinage", x="bottomright", legend=c("« Tour » et « Reine »","Uniquement « Reine »"), col=c("blue","red"),
+       lty=1, # type de figuré dans la légende
+       cex=0.7, # taille légende
+       box.lty=0, # supprime bordure
+       bg=NA # Pas de couleur en arrière-plan de la légende
+       )
 
 # Réalisation d'une liste de poids
 test_liste <- nb2listw(test_queen, zero.policy = TRUE)
@@ -366,10 +382,11 @@ couleurs <- c("#f7f7f7", "#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#fff
 typoLayer(x = test_geom , var = "cats",
            # col = carto.pal(pal1 = "blue.pal", pal2 = "red.pal", n1 = 3, n2 = 3),
            col = couleurs[1:length(levels(test_geom$cats))],
-           border = NA,
+           # border = NA,
+           border = "grey70", lwd = 0.1,
            legend.pos = "topleft",
            legend.values.order = levels(test_geom$cats),
-           legend.title.txt = "Indices de Moran significatifs\nsur la variable de « commune nouvelle »\n(pvalue < 0,05)")
+           legend.title.txt = "Indices de Moran significatifs\nsur la variable « commune nouvelle »\n(pvalue < 0,05)")
 
 
 typoLayer(x = test_geom, var = "COM_NOUV",
